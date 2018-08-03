@@ -1,0 +1,206 @@
+{
+"AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "",
+
+
+    "Resources": {
+        
+        "VPC01":  {
+          "Type": "AWS::EC2::VPC",
+          "Properties": {
+            "CidrBlock": "10.0.0.0/16",
+            "Tags": [ {"Key": "Name", "Value": "VPC"} ],
+            "EnableDnsSupport": true,
+            "EnableDnsHostnames": true
+          }
+        },
+
+        "igw01": {
+          "DependsOn":"VPC01",
+          "Type": "AWS::EC2::InternetGateway",
+          "Properties": {
+            "Tags": [ {"Key": "Name", "Value": "main"} ]
+          }
+        },
+        "AttachGateway": {
+          "DependsOn":"igw01",
+          "Type": "AWS::EC2::VPCGatewayAttachment",
+          "Properties": {
+            "VpcId": { "Ref": "VPC01"},
+            "InternetGatewayId": { "Ref": "igw01" }
+          }
+        },
+        
+        
+        "privateSubnet": {
+          "DependsOn":"VPC01",
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+            "AvailabilityZone": "us-west-1a",
+            "VpcId": { "Ref":"VPC01"},
+            "CidrBlock": "10.0.1.0/24",
+            "Tags": [{ "Key":"Name", "Value":"private_subnet"}]
+          }
+        },
+        
+        "publicSubnet": {
+          "DependsOn":"VPC01",
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+            "AvailabilityZone": "us-west-1a",
+            "VpcId": {"Ref":"VPC01"},
+            "CidrBlock": "10.0.2.0/24",
+            "Tags": [{"Key":"Name", "Value":"public_subnet"}]
+          }
+        },
+        
+        
+        "routeTable01": {
+          "DependsOn":["VPC01","igw01"],
+          "Type": "AWS::EC2::RouteTable",
+          "Properties": {
+            "VpcId": {"Ref":"VPC01"},
+            "Tags": [{"Key":"Name", "Value":"public-rt"}]
+          }
+        },
+        
+        "publicRoute": {
+          "DependsOn":["VPC01","routeTable01"],
+          "Type": "AWS::EC2::Route",
+          "Properties": {
+            "RouteTableId": {"Ref":"routeTable01"},
+            "DestinationCidrBlock": "0.0.0.0/0",
+            "GatewayId": {"Ref":"igw01"}
+          }
+        },
+
+        "publicSubnetAssociation": {
+            "DependsOn":["VPC01","routeTable01","publicRoute"], 
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "RouteTableId" : {"Ref":"routeTable01"},
+                "SubnetId" : {"Ref":"publicSubnet"}
+             }
+        },
+
+        
+        "WebserverSecGrp" : {
+          "DependsOn":["VPC01","publicSubnet"],
+          "Type" : "AWS::EC2::SecurityGroup",
+          "Properties" : {
+            "GroupDescription" : "WebServer SecGrp",
+            "SecurityGroupIngress" : [{ 
+              "IpProtocol" : "tcp",
+              "FromPort" : "80",
+              "ToPort" : "80",
+              "CidrIp" : "0.0.0.0/0"
+            },
+            { 
+              "IpProtocol" : "tcp",
+              "FromPort" : "22",
+              "ToPort" : "22",
+              "CidrIp" : "0.0.0.0/0"
+            }
+            ],
+            "SecurityGroupEgress" : [{
+              "IpProtocol" : "-1",
+              "FromPort" : "0",
+              "ToPort" : "0",
+              "CidrIp" : "0.0.0.0/0"
+           }],
+
+            "VpcId" : {"Ref":"VPC01"},
+            "Tags": [
+              {
+                  "Key": "Name",
+                  "Value": "WebserverSecGrp"
+              }
+          ]
+          }
+        },
+        
+        
+        "eip": {
+          "DependsOn":"Ec2Instance",
+          "Type": "AWS::EC2::EIP",
+          "Properties": {
+            "Domain": "vpc",
+            "InstanceId": {"Ref":"Ec2Instance"}
+          }
+        },
+        
+
+        "Ec2Instance": {
+            "DependsOn":["publicSubnet","WebserverSecGrp"],
+            "Type": "AWS::EC2::Instance",
+            
+            "Properties": {
+                "KeyName": "ramanuj",
+                "ImageId": "ami-e0ba5c83",
+                "SubnetId":{"Ref":"publicSubnet"},
+                "SecurityGroupIds":[{"Ref":"WebserverSecGrp"}],
+                "InstanceType": "t2.micro",
+                "Monitoring": "true",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Webserver"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -ex",
+                                "sudo yum update -y",
+                                "sudo yum install httpd -y",
+                                "sudo systemctl start httpd",
+                                "sudo systemctl enable httpd"
+                            ]
+                        ]
+                    }
+                }
+        }
+                }
+        
+        
+        
+        
+        
+
+    },
+
+    "Outputs": {
+
+      "VpcCIDR":{
+        "Description":"VPC ID ",
+        "Value" : { "Fn::GetAtt" : [ "VPC01", "CidrBlock" ]}
+        },
+            
+      "PrivateSubnetID" : {
+        "Value" : {"Ref":"privateSubnet"}
+      },
+
+      "PublicSubnetID" : {
+        "Value" : {"Ref":"publicSubnet"}
+      },
+      
+      "publicDNS" : {
+        "Value" : {"Fn::GetAtt" : [ "Ec2Instance", "PublicDnsName" ]}
+      }
+      
+
+
+      
+
+      
+    
+    
+    }
+}
+      
+    
+     
+      
+
